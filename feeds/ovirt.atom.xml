@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>virt-bits</title><link href="https://fromanirh.github.io/" rel="alternate"></link><link href="https://fromanirh.github.io/feeds/ovirt.atom.xml" rel="self"></link><id>https://fromanirh.github.io/</id><updated>2017-01-26T10:52:00+01:00</updated><entry><title>Container support for oVirt</title><link href="https://fromanirh.github.io/containers-in-ovirt.html" rel="alternate"></link><published>2017-01-26T10:52:00+01:00</published><author><name>Francesco Romani</name></author><id>tag:fromanirh.github.io,2017-01-26:containers-in-ovirt.html</id><summary type="html">&lt;h1&gt;How to try the experimental container support for Vdsm.&lt;/h1&gt;
+&lt;p&gt;In oVirt 4.1, Vdsm (4.19) gained the &lt;em&gt;experimental&lt;/em&gt; support to run containers alongside VMs.
+Vdsm had since long time the ability to manage VMs which run containers,
+and recently gained support for
+&lt;a href="http://www.projectatomic.io/blog/2015/01/running-ovirt-guest-agent-as-privileged-container/"&gt;atomic guests&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;With the new support we are describing, you will be able to manage containers
+with the same, proven infrastructure that let you manage VMs.
+The scope of the further development depend on the interest on this feature.&lt;/p&gt;
+&lt;h2&gt;What works, aka what to expect&lt;/h2&gt;
+&lt;p&gt;You can run any docker image on the public docker registry.
+The ability of using file-based storage for persistent volumes is currently under work.&lt;/p&gt;
+&lt;h2&gt;What does not yet work, aka what NOT to expect&lt;/h2&gt;
+&lt;p&gt;Few things are planned and currently under active development:
+1. Monitoring. Engine will not get any update from the container besides "VM" status (Up, Down...)
+   One important drawback is that you will not be told the IP of the container from Engine,
+   you will need to connect to the Vdsm host to discover it using standard docker tools.
+2. Proper network integration. So far the feature relies on existing docker network configuration,
+   which requires manual intervention and/or settings outside oVirt. We are currently evaluating
+   the introduction of a new &lt;a href="https://gerrit.ovirt.org/#/c/67229/"&gt;docker network plugin&lt;/a&gt;.&lt;/p&gt;
+&lt;h2&gt;1. Introduction and prerequisites&lt;/h2&gt;
+&lt;p&gt;Trying out container support affects only the host and the Vdsm.
+Besides add few custom properties (totally safe and supported since early
+3.z), there are zero changes required to the DB and to Engine.
+Nevertheless, we recommend to dedicate one oVirt 4.1.z environment,
+or at least one 4.1.z host, to try out the container feature.&lt;/p&gt;
+&lt;p&gt;To get started, first thing you need is to setup a vanilla oVirt 4.1.z
+installation. We will need to make changes to the Vdsm host,
+so hosted engine and/or oVirt node may add extra complexity,
+better to avoid them at the moment.&lt;/p&gt;
+&lt;p&gt;The reminder of this tutorial assumes you are using two hosts,
+one for Vdsm (will be changed) and one for Engine (will require zero changes);
+furthermore, we assume the Vdsm host is running on CentOS 7.y.&lt;/p&gt;
+&lt;p&gt;We require:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;one test host for Vdsm. You will need to configure ahead of time the docker networking as you see fit.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;docker &amp;gt;= 1.10&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;oVirt &amp;gt;= 4.1.0 (Vdsm &amp;gt;= 4.19.1)&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;CentOS &amp;gt;= 7.3&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;1.1. Note if you use packages from docker.com&lt;/h3&gt;
+&lt;p&gt;Up to date docker packages for centos are available &lt;a href="https://docs.docker.com/engine/installation/linux/centos/"&gt;here&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;Caveats:
+1. docker from official rpms conflicts con docker from CentOS, and has a different package name: docker-engine vs docker.
+   Please note that the kubernetes package from CentOS, for example, require 'docker', not 'docker-engine'.
+2. you may want to replace the default service file
+   &lt;a href="https://github.com/mojaves/convirt/blob/master/patches/centos72/systemd/docker/docker.service"&gt;with this one&lt;/a&gt;
+   and to use this
+   &lt;a href="https://github.com/mojaves/convirt/blob/master/patches/centos72/systemd/docker/docker-engine"&gt;sysconfig file&lt;/a&gt;.
+   Here I'm just adding the storage options docker requires, much like the CentOS docker is configured.
+   Configuring docker like this can save you some troubleshooting, especially if you had docker from CentOS installed
+   on the testing box.&lt;/p&gt;
+&lt;h2&gt;2. Augment Vdsm to support containers&lt;/h2&gt;
+&lt;p&gt;Make sure you have the &lt;code&gt;vdsm-containers&lt;/code&gt; package installed, and that the docker service is running.&lt;/p&gt;
+&lt;p&gt;to install the &lt;code&gt;vdsm-containers&lt;/code&gt; package you are gonna need to run something like.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# rpm -ivh vdsm-containers-4.19.2-5.gitfcfb64d.el7.centos.noarch.rpm
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;make sure Engine still works flawlessly with patched Vdsm.
+This ensure that no regression is introduced, and that your environment can run VMs just as before.
+Now we can proceed adding the container support.&lt;/p&gt;
+&lt;p&gt;If you don't have already, install docker:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# yum install docker
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;start the docker service&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# systemctl start docker
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;most likely, you want to make sure&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# systemctl enable docker
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;As last step, restart &lt;em&gt;both&lt;/em&gt; Vdsm and Supervdsm,&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# systemctl restart supervdsmd vdsmd
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;Now we can check if Vdsm detects docker, so you can use it:
+still on the same Vdsm host, run&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;$ vdsClient -s &lt;span class="m"&gt;0&lt;/span&gt; getVdsCaps &lt;span class="p"&gt;|&lt;/span&gt; grep containers
+    &lt;span class="nv"&gt;containers&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;true&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;This means this Vdsm can run containers!&lt;/p&gt;
+&lt;p&gt;Now we need to make sure the host network configuration is fine.&lt;/p&gt;
+&lt;h3&gt;2.1. Configure the docker network for Vdsm&lt;/h3&gt;
+&lt;p&gt;Currently, the configurability of the networking of container run through Vdsm is very limited.
+Vdsm will put all the containers it runs in the network configured in /etc/vdsm.conf.
+Check the &lt;code&gt;network_name&lt;/code&gt; option in the &lt;code&gt;containers&lt;/code&gt; section.&lt;/p&gt;
+&lt;p&gt;Please note that the network name you configure must be the network name of the container engine.
+In other words, you should use the &lt;em&gt;docker network name&lt;/em&gt;, as you see it in the output of &lt;code&gt;docker ls&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;Example:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;$ docker network ls
+NETWORK ID          NAME                DRIVER
+d807ac6fa7b7        bridge              bridge
+f962d0d1018a        none                null
+752accd64c06        host                host
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;Valid names in this example are &lt;code&gt;bridge&lt;/code&gt; &lt;code&gt;none&lt;/code&gt; and &lt;code&gt;host&lt;/code&gt;. For obvious reasons, the only real option
+is &lt;code&gt;bridge&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;You must configure the docker network ahead of time using the
+&lt;a href="https://docs.docker.com/engine/userguide/networking/"&gt;standard docker&lt;/a&gt;
+&lt;a href="https://docs.docker.com/v1.5/articles/networking/"&gt;network tools&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;One simple and effective way to configure docker is to dedicate one NIC in your host to docker and
+to use the &lt;a href="https://docs.docker.com/engine/userguide/networking/get-started-macvlan/"&gt;macvlan driver&lt;/a&gt;.
+Please note that the macvlan driver was included in docker &amp;gt;= 1.12.&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;CAUTION&lt;/em&gt; oVirt still needs its networking settings, most notably the &lt;code&gt;ovirtmgmt&lt;/code&gt; network available
+to interact with the host.&lt;/p&gt;
+&lt;p&gt;At the moment, there is no way to configure the docker networking through the Engine UI, or to integrate
+into the oVirt networking. The later option is being considered as future extension.&lt;/p&gt;
+&lt;h2&gt;3. Configure Engine&lt;/h2&gt;
+&lt;p&gt;As mentioned above, we need now to configure Engine. This boils down to:
+Add a few custom properties for VMs:&lt;/p&gt;
+&lt;p&gt;In case you were already using custom properties, you need to amend the command
+line to not overwrite your existing ones.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# engine-config -s UserDefinedVMProperties=&amp;#39;volumeMap=^[a-zA-Z_-]+:[a-zA-Z_-]+$;containerImage=^[a-zA-Z]+(://|)[a-zA-Z]+$;containerType=^(docker|none)$&amp;#39; --cver=4.1
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;It is worth stressing that while the variables are container-specific,
+the VM custom properties are totally inuntrusive and old concept in oVirt, so
+this step is totally safe.&lt;/p&gt;
+&lt;p&gt;Now restart Engine to let it use the new variables:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# systemctl restart ovirt-engine
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;The next step is actually configure one "container VM" and run it.&lt;/p&gt;
+&lt;h2&gt;4. Create the container "VM"&lt;/h2&gt;
+&lt;p&gt;To finally run a container, you start creating a VM much like you always did, with
+few changes&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;most of the hardware-related configuration isn't relevant for container "VMs",
+     besides cpu share and memory limits; this will be better documented in the
+     future; unneeded configuration will just be ignored&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;You need to set some custom properties for your container "VM". Those are
+     actually needed to enable the container flow, and they are documented in
+     the next section. You &lt;em&gt;need&lt;/em&gt; to set at least &lt;code&gt;containerType&lt;/code&gt; and &lt;code&gt;containerImage&lt;/code&gt;.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3&gt;4.2. Custom variables for container support&lt;/h3&gt;
+&lt;p&gt;The container support needs some custom properties to be properly configured:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;code&gt;containerImage&lt;/code&gt; (&lt;em&gt;needed&lt;/em&gt; to enable the container system).
+     Just select the target image you want to run. You can use the standard syntax of the
+     container runtimes.
+     For example, if you set the value to &lt;code&gt;redis&lt;/code&gt;, the container will use the docker redis image
+     from the docker registry.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;code&gt;containerType&lt;/code&gt; (&lt;em&gt;needed&lt;/em&gt; to enable the container system).
+     Selects the container runtime you want to use. So far only docker is supported, so there is no
+     real choice; but please note that if you &lt;em&gt;do not&lt;/em&gt; explicitely select the docker runtime,
+     the container infrastructure will not work, and you will have a regular VM instead.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;Example configuration:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;containerImage = redis
+containerType = docker
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;h3&gt;4.2. A little bit of extra work: preload the images on the Vdsm host&lt;/h3&gt;
+&lt;p&gt;This step is not needed by the flow, and will be handled by oVirt in the future.
+The issue is how the container image are handled. They are stored by the container
+management system on each host, and they are not pre-downloaded.&lt;/p&gt;
+&lt;p&gt;To shorten the duration of the first boot, you are advised to pre-download
+the image(s) you want to run. For example&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="cp"&gt;##&lt;/span&gt;&lt;span class="c"&gt; on the Vdsm host you want to use with containers&lt;/span&gt;&lt;span class="x"&gt;&lt;/span&gt;
+&lt;span class="err"&gt;#&lt;/span&gt;&lt;span class="x"&gt; docker pull &lt;/span&gt;&lt;span class="p"&gt;$&lt;/span&gt;&lt;span class="nv"&gt;image&lt;/span&gt;&lt;span class="x"&gt;&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;example:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# docker pull redis
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;h2&gt;5. Run the container "VM"&lt;/h2&gt;
+&lt;p&gt;You are now all set to run your "VM" using oVirt Engine, just like any existing VM.
+Some actions doesn't make sense for a container "VM", like live migration.
+Engine won't stop you to try to do those actions, but they will fail gracefully
+using the standard errors.&lt;/p&gt;
+&lt;h2&gt;6. Next steps&lt;/h2&gt;
+&lt;p&gt;What to expect from this project in the future?
+For the integration with Vdsm, we want to fix the existing known issues, most notably:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;add proper monitoring/reporting of the container health&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;ensure proper integration of the container image store with oVirt storage management&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;streamline the network configuration&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;What is explicitely excluded yet is any Engine change. This is a Vdsm-only change at the
+moment, so fixing the following is currently unplanned:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;First and foremost, Engine will not distinguish between real VMs and container VMs.
+    Actions unavailable to container will not be hidden from UI. Same for monitoring
+    and configuration data, which will be ignored.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Engine is NOT aware of the volumes one container can use. You must inspect and do the
+    mapping manually.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Engine is NOT aware of the available container runtimes. You must select it carefully&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Proper integration with Engine may be added in the future once this feature exits
+from the experimental/provisional stage.&lt;/p&gt;
+&lt;p&gt;Thanks for reading, make sure to share your thoughts on the oVirt mailing lists!&lt;/p&gt;</summary><category term="oVirt"></category><category term="Vdsm"></category><category term="containers"></category><category term="release-4.1"></category></entry></feed>
