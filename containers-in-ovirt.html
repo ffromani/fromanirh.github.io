@@ -105,38 +105,26 @@ furthermore, we assume the Vdsm host is running on CentOS 7.y.</p>
 <p>to install the <code>vdsm-containers</code> package you are gonna need to run something like.</p>
 <div class="highlight"><pre><span></span># rpm -ivh vdsm-containers-4.19.2-5.gitfcfb64d.el7.centos.noarch.rpm
 </pre></div>
-
-
 <p>make sure Engine still works flawlessly with patched Vdsm.
 This ensure that no regression is introduced, and that your environment can run VMs just as before.
 Now we can proceed adding the container support.</p>
 <p>If you don't have already, install docker:</p>
 <div class="highlight"><pre><span></span># yum install docker
 </pre></div>
-
-
 <p>start the docker service</p>
 <div class="highlight"><pre><span></span># systemctl start docker
 </pre></div>
-
-
 <p>most likely, you want to make sure</p>
 <div class="highlight"><pre><span></span># systemctl enable docker
 </pre></div>
-
-
 <p>As last step, restart <em>both</em> Vdsm and Supervdsm,</p>
 <div class="highlight"><pre><span></span># systemctl restart supervdsmd vdsmd
 </pre></div>
-
-
 <p>Now we can check if Vdsm detects docker, so you can use it:
 still on the same Vdsm host, run</p>
 <div class="highlight"><pre><span></span>$ vdsClient -s <span class="m">0</span> getVdsCaps <span class="p">|</span> grep containers
     <span class="nv">containers</span> <span class="o">=</span> <span class="nb">true</span>
 </pre></div>
-
-
 <p>This means this Vdsm can run containers!</p>
 <p>Now we need to make sure the host network configuration is fine.</p>
 <h3>2.1. Configure the docker network for Vdsm</h3>
@@ -152,8 +140,6 @@ d807ac6fa7b7        bridge              bridge
 f962d0d1018a        none                null
 752accd64c06        host                host
 </pre></div>
-
-
 <p>Valid names in this example are <code>bridge</code> <code>none</code> and <code>host</code>. For obvious reasons, the only real option
 is <code>bridge</code>.</p>
 <p>You must configure the docker network ahead of time using the
@@ -171,18 +157,14 @@ into the oVirt networking. The later option is being considered as future extens
 Add a few custom properties for VMs:</p>
 <p>In case you were already using custom properties, you need to amend the command
 line to not overwrite your existing ones.</p>
-<div class="highlight"><pre><span></span># engine-config -s UserDefinedVMProperties=&#39;volumeMap=^[a-zA-Z_-]+:[a-zA-Z_-]+$;containerImage=^[a-zA-Z]+(://|)[a-zA-Z]+$;containerType=^(docker|none)$&#39; --cver=4.1
+<div class="highlight"><pre><span></span># engine-config -s UserDefinedVMProperties='volumeMap=^[a-zA-Z_-]+:[a-zA-Z_-]+$;containerImage=^[a-zA-Z]+(://|)[a-zA-Z]+$;containerType=^(docker|none)$' --cver=4.1
 </pre></div>
-
-
 <p>It is worth stressing that while the variables are container-specific,
 the VM custom properties are totally inuntrusive and old concept in oVirt, so
 this step is totally safe.</p>
 <p>Now restart Engine to let it use the new variables:</p>
 <div class="highlight"><pre><span></span># systemctl restart ovirt-engine
 </pre></div>
-
-
 <p>The next step is actually configure one "container VM" and run it.</p>
 <h2>4. Create the container "VM"</h2>
 <p>To finally run a container, you start creating a VM much like you always did, with
@@ -220,24 +202,18 @@ few changes</p>
 <div class="highlight"><pre><span></span>containerImage = redis
 containerType = docker
 </pre></div>
-
-
 <h3>4.2. A little bit of extra work: preload the images on the Vdsm host</h3>
 <p>This step is not needed by the flow, and will be handled by oVirt in the future.
 The issue is how the container image are handled. They are stored by the container
 management system on each host, and they are not pre-downloaded.</p>
 <p>To shorten the duration of the first boot, you are advised to pre-download
 the image(s) you want to run. For example</p>
-<div class="highlight"><pre><span></span><span class="cp">##</span><span class="c"> on the Vdsm host you want to use with containers</span><span class="x"></span>
-<span class="err">#</span><span class="x"> docker pull </span><span class="p">$</span><span class="nv">image</span><span class="x"></span>
+<div class="highlight"><pre><span></span>## on the Vdsm host you want to use with containers
+# docker pull $image
 </pre></div>
-
-
 <p>example:</p>
 <div class="highlight"><pre><span></span># docker pull redis
 </pre></div>
-
-
 <h2>5. Run the container "VM"</h2>
 <p>You are now all set to run your "VM" using oVirt Engine, just like any existing VM.
 Some actions doesn't make sense for a container "VM", like live migration.

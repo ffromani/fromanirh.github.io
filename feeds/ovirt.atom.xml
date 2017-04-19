@@ -1,5 +1,255 @@
 <?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom"><title>virt-bits</title><link href="https://fromanirh.github.io/" rel="alternate"></link><link href="https://fromanirh.github.io/feeds/ovirt.atom.xml" rel="self"></link><id>https://fromanirh.github.io/</id><updated>2017-01-26T10:52:00+01:00</updated><entry><title>Container support for oVirt</title><link href="https://fromanirh.github.io/containers-in-ovirt.html" rel="alternate"></link><published>2017-01-26T10:52:00+01:00</published><author><name>Francesco Romani</name></author><id>tag:fromanirh.github.io,2017-01-26:containers-in-ovirt.html</id><summary type="html">&lt;h1&gt;How to try the experimental container support for Vdsm.&lt;/h1&gt;
+<feed xmlns="http://www.w3.org/2005/Atom"><title>virt-bits</title><link href="https://fromanirh.github.io/" rel="alternate"></link><link href="https://fromanirh.github.io/feeds/ovirt.atom.xml" rel="self"></link><id>https://fromanirh.github.io/</id><updated>2017-04-19T09:12:00+02:00</updated><entry><title>Performance monitoring of Vdsm</title><link href="https://fromanirh.github.io/performance-monitoring-of-vdsm.html" rel="alternate"></link><published>2017-04-19T09:12:00+02:00</published><author><name>Francesco Romani</name></author><id>tag:fromanirh.github.io,2017-04-19:performance-monitoring-of-vdsm.html</id><summary type="html">&lt;h1&gt;Monitoring the performance monitor of Vdsm&lt;/h1&gt;
+&lt;p&gt;Vdsm, the &lt;a href="http://www.ovirt.org"&gt;oVirt&lt;/a&gt; node management daemon, provides
+monitoring and telemetry reporting for the host on which runs, and for the VM
+which manages. Up until version 4.1, included, Vdsm includes custom-built monitoring
+code. In 4.2 and beyond, we are transitioning to &lt;a href="http://www.collectd.org"&gt;collectd&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;In this document we'll see how this switch affects the performance of Vdsm, and what
+improvements are in the pipeline.&lt;/p&gt;
+&lt;h2&gt;What Vdsm monitors&lt;/h2&gt;
+&lt;p&gt;There are four major monitoring duties that Vdsm performs. While all four are important,
+the performance cost of all of those varies greatly. Those are:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;monitoring of the VMs - for external consumption
+   Provide metrics about the hypervisor resource consumption, both physical and virtual.
+   e.g. real CPU usage per-hypervisor, VCPU usage inside the hypervisor, RAM used by the
+   hypervisor, network traffic per-hypervisor. This task is done by &lt;a href="http://www.libvirt.org"&gt;libvirt&lt;/a&gt;,
+   Vdsm just consumes the result of one API call. The metrics are exported to the external clients (like
+   time-series DB, oVirt Engine, oVirt data warehous).&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;monitoring of the VMs - for &lt;em&gt;internal&lt;/em&gt; consumption
+   Vdsm also monitor some key VM metrics to implement some of its flows. The most notable
+   of those flows is the automatic extension of thin-provisioned disks. This gives the
+   illusion of fully provisioned disks for VMs, while actually they are thin-provisioned
+   and extended on the fly when the space is used, without any external client intervention.
+   To do so, Vdsm continuously monitor the space consumption of thin-provisione disks,
+   but this metric is used only internally.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;monitoring of the Host
+   Provide the metrics about the host performance and resource allocation, like cpu usage
+   memorty consumption, network traffic, hugepage allocation, numa statistics.
+   Those stats are gathered by Vdsm itself scanning files under the linux procfs or sysfs.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Vdsm health-check
+   Vdsm reports metrics about its own behaviour and health, like its CPU and RAM consumption,
+   number of active threads, liveness of the libvirtd connection.
+   It is of course debatable that Vdsm reports its own health: if Vdsm becomes unresponsive, or
+   slow, the report could be missing or worse misleading.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2&gt;Replacements for the Vdsm monitoring&lt;/h2&gt;
+&lt;p&gt;The collectd projects offers a good alternative for the Vdsm monitoring. Collectd is a mature and
+extensible project with a great array of plugin to collect a lot of metrics.&lt;/p&gt;
+&lt;p&gt;Collectd version 5.7.0 and onwards offers straightforward replacement for the monitoring areas #1 and #3.
+However, we do have some gaps between the collectd virt plugin and the metrics reported by Vdsm.
+The author submitted some patches to bring the collectd virt plugin up to speed, and those enhancement
+are expected to be delivered in collectd &amp;gt;= 5.8.0.
+Furthermore, &lt;a href="https://github.com/fromanirh/collectd-ovirt"&gt;a new collectd plugin is available&lt;/a&gt;
+rewritten (almost) from scratch with a clean and modern codebase, shedding all the legacy constaints
+the collectd plugin has.&lt;/p&gt;
+&lt;p&gt;libvirt &amp;gt;= 3.2.0 gained support for disk threshold events: libvirtd can emit one event if the disk
+usage exceeds a configurable threshold, so we can leverage this in oVirt &amp;gt;= 4.2 ang replace the
+monitoring area #2.&lt;/p&gt;
+&lt;p&gt;Finally, the extensible nature of collectd allows us to replace the self-health Vdsm monitoring with
+&lt;a href="https://github.com/fromanirh/procwatch"&gt;minimal glue code&lt;/a&gt;, avoiding the need of a custom built plugin
+with a very narrow use case. This plugin, and the detailed monintoring flow, will be described in a future
+post.&lt;/p&gt;
+&lt;h2&gt;Test configuration and methods&lt;/h2&gt;
+&lt;p&gt;Let's describe the test environment.&lt;/p&gt;
+&lt;p&gt;All test will be run on one up-to-date RHEL 7.3 (you can get identical result with CentOS 7.3) running
+on a box with one core i7 3770 CPU and 32 GiB of RAM.&lt;/p&gt;
+&lt;p&gt;The software stack is the aforementioned stock RHEL 7.3 plus:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;collectd 5.7.0 from sources + backport of the virt plugin from master branch&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;procwatch version 8e579d0&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;a snapshot of the last Vdsm from the 4.1 branch, which will become 4.1.2&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;oVirt Engine version 4.0.6&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;collectd 5.7.0 + virt plugin backported from master (no further changes)&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The test consist in evaluating the resource consumption of the software stack while running a medium-to-heavy
+load of 200 VMs on a single host. We don't care about what the VM are doing, we just want to assess how our
+stack. So we will run very simple VMs, each with 16 MiB (yes, sixteen megabibytes - we use such low RAM to
+pack as many VMs as possible), 1 vcpu, 1GiB ISCSI disk, no OS running thus no oVirt Guest Agent.&lt;/p&gt;
+&lt;p&gt;Again, such minimal VMs are used only because resource constraints. The test is still significant to assess
+the performances of the host side.&lt;/p&gt;
+&lt;p&gt;We will evaluate the &lt;a href="https://en.wikipedia.org/wiki/Load_(computing)"&gt;long term load averag&lt;/a&gt; and the CPU consumption
+of the processes.
+In each of the following graphs, if not otherwise specified, we will have&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;the time of the day on the X axis&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;the CPU load, percentage, on the &lt;em&gt;left&lt;/em&gt; Y axis&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;the amount of the load average on the &lt;em&gt;right&lt;/em&gt; Y axis&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The color code of the software components is:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;green line: libvirt graph&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;red line: Vdsm graph (unfortunately in one graph we will see also one turquoise line)&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;brown line: Collectd graph (where relevant)&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;purple line: load average graph&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The test starts around the 11:25 local time, when we booti the VMs. Around the 11:30 local time the system
+is stable and the measurmenent begins.&lt;/p&gt;
+&lt;h2&gt;Experiment 1: the simplest approach, Vdsm and collectd side by side&lt;/h2&gt;
+&lt;p&gt;&lt;img alt="figure 1: baseline, collectd and vdsm side by side" src="https://fromanirh.github.io/images/perf-mon-fig1.png" style="width: 1613px; height: auto; max-width: 100%;"/&gt;&lt;/p&gt;
+&lt;p&gt;&lt;a href="images/perf-mon-fig1.png"&gt;download the full image&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;The first 30m (11:30 -&amp;gt; 12:00) are stock config. Stock Vdsm, collectd is
+just monitoring the host (no vm monitoring, virt plugin unloaded).&lt;/p&gt;
+&lt;p&gt;Libvirt load is ~14% (green line)
+Vdsm load is a bit higher, ~16% (red line)
+UNIX load is ~0.6 (light purple)
+collectd load is ~0&lt;/p&gt;
+&lt;p&gt;This is the baseline reference load and the benchmark for all the coming experiments.&lt;/p&gt;
+&lt;p&gt;Then we test the simplest possible upgrade path: just install and run collectd alongside Vdsm.
+Around 12:00 we enabled virt plugin and restarted collectd. The collectd
+dark purple line disappears (PID change), the new line is the brown one.
+Vdsm load is unaffected, as expected.
+Collectd CPU load becomes noticeable, floating behind 2 and 3% CPU load
+Libvirt load jumps to a bit less than 30%. As expected, we have libvirtd doing twice the work,
+because both collectd and Vdsm duplicates the work.&lt;/p&gt;
+&lt;p&gt;As expected, doing twice the work does not come for free on the libvirtd side, so the simplest
+approach is not really viable.&lt;/p&gt;
+&lt;h2&gt;Experiment 2: the impact of the disk usage polling&lt;/h2&gt;
+&lt;p&gt;&lt;img alt="figure 2: avoiding the disk usage polling" src="https://fromanirh.github.io/images/perf-mon-fig2.png" style="width: 1613px; height: auto; max-width: 100%;"/&gt;&lt;/p&gt;
+&lt;p&gt;&lt;a href="images/perf-mon-fig2.png"&gt;download the full image&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;Around the 13:03 localtime we disabled the the high water monitoring; we also disabled again
+the VM monitoring in collectd (the virt plugin).
+This load simulate the impact of the switch of the new high water event, solving the monitoring
+task #2 of Vdsm described above; it is a good estimation of how oVirt 4.2 with libvirt &amp;gt;= 3.2.0
+could look like.&lt;/p&gt;
+&lt;p&gt;Considering the baseline load (from ~11:35 to ~12:05), we see
+approximatively -50% of the libvirt load and -30% of the Vdsm load.
+This strongly suggests that the switch to the libvirt disk usage notification will be really a
+big win performance wise.&lt;/p&gt;
+&lt;p&gt;Please note that after 13:03 the Vdsm line switches from red to turquoise. This glitch is fixed in the following
+graphs.&lt;/p&gt;
+&lt;p&gt;Please note that from now on the high water mark is &lt;em&gt;DISABLED&lt;/em&gt; on all
+the upcoming experiment, assuming Vdsm will use the high watermark event,&lt;/p&gt;
+&lt;h2&gt;Experiment 3: moving all the monitoring to collectd&lt;/h2&gt;
+&lt;p&gt;&lt;img alt="figure 3: moving all the monitoring to collectd" src="https://fromanirh.github.io/images/perf-mon-fig3.png" style="width: 1613px; height: auto; max-width: 100%;"/&gt;&lt;/p&gt;
+&lt;p&gt;&lt;a href="images/perf-mon-fig3.png"&gt;download the full image&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;We can now observe what happens if we outsource the VM and host monitoring to collectd.
+(the monitoring tasks #1 and #3 described above)&lt;/p&gt;
+&lt;p&gt;From ~14:05 we have:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;Vdsm does not monitor anymore not the VMs nor the host (nor the high water for disks)&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Collectd uses the upstream virt plugin.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The collectd configuration is&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;/etc/collectd.conf&lt;/code&gt;:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;LoadPlugin syslog
+LoadPlugin cpu
+LoadPlugin interface
+LoadPlugin load
+LoadPlugin memory
+Include "/etc/collectd.d"
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;&lt;code&gt;/etc/collectd.d/virt.conf&lt;/code&gt;:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;LoadPlugin virt
+&lt;span class="nt"&gt;&amp;lt;Plugin&lt;/span&gt; &lt;span class="err"&gt;virt&lt;/span&gt;&lt;span class="nt"&gt;&amp;gt;&lt;/span&gt;
+    Connection "qemu:///system"
+    Instances 5
+    ExtraStats "disk pcpu"
+&lt;span class="nt"&gt;&amp;lt;/Plugin&amp;gt;&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The libvirt load is a little higher than the baseline, on average around 18% now over 15% baseline
+Vdsm load drops to ~5%, while the collectd load is in the ~3% range.
+(&lt;em&gt;PLEASE NOTE&lt;/em&gt; those are estimations not actual averages)&lt;/p&gt;
+&lt;p&gt;The overall resource consumption of the stack is a little lower than the
+baseline, with further room for optimzation. It is worth to note that the unix system load increases;
+further investigation is needed to explain this increase.&lt;/p&gt;
+&lt;h2&gt;Experiment 4: alternative collectd virt plugin&lt;/h2&gt;
+&lt;p&gt;&lt;img alt="figure 4: alternative collectd plugin" src="https://fromanirh.github.io/images/perf-mon-fig4.png" style="width: 1613px; height: auto; max-width: 100%;"/&gt;&lt;/p&gt;
+&lt;p&gt;&lt;a href="images/perf-mon-fig4.png"&gt;download the full image&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;We now try out the &lt;a href="https://github.com/fromanirh/collectd-ovirt"&gt;out of tree virt2 plugin&lt;/a&gt; plugin,
+configured like that:
+&lt;code&gt;/etc/collectd.d/virt2.conf&lt;/code&gt;&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;LoadPlugin virt2
+&lt;span class="nt"&gt;&amp;lt;Plugin&lt;/span&gt; &lt;span class="err"&gt;virt2&lt;/span&gt;&lt;span class="nt"&gt;&amp;gt;&lt;/span&gt;
+    RefreshInterval 15
+    Connection "qemu:///system"
+    Instances 5
+    ExtraStats "pcpu disk"
+&lt;span class="nt"&gt;&amp;lt;/Plugin&amp;gt;&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Of course the upstream &lt;code&gt;virt&lt;/code&gt; plugin is disabled - only one between &lt;code&gt;virt&lt;/code&gt; and &lt;code&gt;virt2&lt;/code&gt; could run
+at any given time.&lt;/p&gt;
+&lt;p&gt;Around the ~14:40 mark we switched the collectd plugin and restart collectd
+We can observe the spiky load profile typical of when we use bulk stats
+from a single thread. Libvirt loads roughly halves, while the collectd load
+slightly increases. This could be one byproduct of the measurement, the expected load profile
+should be spikes of high load and near zero load between spikes.&lt;/p&gt;
+&lt;p&gt;We have room to do some optimizations here to shave some more load, but
+the overall improvement is already there and the UNIX system load
+(purple line) confirms that.&lt;/p&gt;
+&lt;p&gt;In the last experiment, started around the 15:00 mark, we relaxed the
+collectd interval from the default 10s to the Vdsm default 15s, gaining
+a bit more performance with no regression to our current state.&lt;/p&gt;
+&lt;h2&gt;Summary and takeaways&lt;/h2&gt;
+&lt;p&gt;&lt;img alt="figure 5: summary" src="https://fromanirh.github.io/images/perf-mon-fig5.png" style="width: 1323px; height: auto; max-width: 100%;"/&gt;&lt;/p&gt;
+&lt;p&gt;&lt;a href="images/perf-mon-fig5.png"&gt;download the full image&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;To summarize and wrap up, we now provide a graphical summary of the load measured
+during the experiments.&lt;/p&gt;
+&lt;p&gt;The bars are the cpu percent for the components, while the line is
+the UNIX load average.&lt;/p&gt;
+&lt;p&gt;The averages are NOT precise, rather extrapolation from the graphs, yet
+this is a good enough approximation. Those results needs to be reproduced
+and extensively tested in more test conditions.&lt;/p&gt;
+&lt;p&gt;Please note the last column is one estimate of the load using the
+upstream virt plugin relaxing the sampling interval from 10s (collectd
+default) to 15s (vdsm default).
+A ~10m test was run to gather some data.&lt;/p&gt;
+&lt;p&gt;The takeaways from this test run:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;adoptint the disk usage notification event from libvirt offers a significant performance benefit,
+   and comes for free in libvirt &amp;gt;= 3.2.0&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;the aformentioned event, plus the adoption of collectd for monitoring makes the oVirt stack
+gain ~33% of system performance (cumulative load from ~30% to ~18%).&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;there is low-hanging further optimizations, early quick tests suggest that the oVirt stack can
+reach ~50% system performance improvent (cumulative load from ~30% to ~16%) using
+code which is ready &lt;em&gt;today&lt;/em&gt;, like the virt2 plugin.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;No accurate profiling or optimization was recently made on the libvirtd or collectd side,
+so more performance gains are definitevely possible.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;</summary><category term="oVirt"></category><category term="Vdsm"></category><category term="release-4.1"></category></entry><entry><title>Container support for oVirt</title><link href="https://fromanirh.github.io/containers-in-ovirt.html" rel="alternate"></link><published>2017-01-26T10:52:00+01:00</published><author><name>Francesco Romani</name></author><id>tag:fromanirh.github.io,2017-01-26:containers-in-ovirt.html</id><summary type="html">&lt;h1&gt;How to try the experimental container support for Vdsm.&lt;/h1&gt;
 &lt;p&gt;In oVirt 4.1, Vdsm (4.19) gained the &lt;em&gt;experimental&lt;/em&gt; support to run containers alongside VMs.
 Vdsm had since long time the ability to manage VMs which run containers,
 and recently gained support for
@@ -63,38 +313,26 @@ furthermore, we assume the Vdsm host is running on CentOS 7.y.&lt;/p&gt;
 &lt;p&gt;to install the &lt;code&gt;vdsm-containers&lt;/code&gt; package you are gonna need to run something like.&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# rpm -ivh vdsm-containers-4.19.2-5.gitfcfb64d.el7.centos.noarch.rpm
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;make sure Engine still works flawlessly with patched Vdsm.
 This ensure that no regression is introduced, and that your environment can run VMs just as before.
 Now we can proceed adding the container support.&lt;/p&gt;
 &lt;p&gt;If you don't have already, install docker:&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# yum install docker
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;start the docker service&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# systemctl start docker
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;most likely, you want to make sure&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# systemctl enable docker
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;As last step, restart &lt;em&gt;both&lt;/em&gt; Vdsm and Supervdsm,&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# systemctl restart supervdsmd vdsmd
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;Now we can check if Vdsm detects docker, so you can use it:
 still on the same Vdsm host, run&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;$ vdsClient -s &lt;span class="m"&gt;0&lt;/span&gt; getVdsCaps &lt;span class="p"&gt;|&lt;/span&gt; grep containers
     &lt;span class="nv"&gt;containers&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nb"&gt;true&lt;/span&gt;
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;This means this Vdsm can run containers!&lt;/p&gt;
 &lt;p&gt;Now we need to make sure the host network configuration is fine.&lt;/p&gt;
 &lt;h3&gt;2.1. Configure the docker network for Vdsm&lt;/h3&gt;
@@ -110,8 +348,6 @@ d807ac6fa7b7        bridge              bridge
 f962d0d1018a        none                null
 752accd64c06        host                host
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;Valid names in this example are &lt;code&gt;bridge&lt;/code&gt; &lt;code&gt;none&lt;/code&gt; and &lt;code&gt;host&lt;/code&gt;. For obvious reasons, the only real option
 is &lt;code&gt;bridge&lt;/code&gt;.&lt;/p&gt;
 &lt;p&gt;You must configure the docker network ahead of time using the
@@ -129,18 +365,14 @@ into the oVirt networking. The later option is being considered as future extens
 Add a few custom properties for VMs:&lt;/p&gt;
 &lt;p&gt;In case you were already using custom properties, you need to amend the command
 line to not overwrite your existing ones.&lt;/p&gt;
-&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# engine-config -s UserDefinedVMProperties=&amp;#39;volumeMap=^[a-zA-Z_-]+:[a-zA-Z_-]+$;containerImage=^[a-zA-Z]+(://|)[a-zA-Z]+$;containerType=^(docker|none)$&amp;#39; --cver=4.1
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# engine-config -s UserDefinedVMProperties='volumeMap=^[a-zA-Z_-]+:[a-zA-Z_-]+$;containerImage=^[a-zA-Z]+(://|)[a-zA-Z]+$;containerType=^(docker|none)$' --cver=4.1
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;It is worth stressing that while the variables are container-specific,
 the VM custom properties are totally inuntrusive and old concept in oVirt, so
 this step is totally safe.&lt;/p&gt;
 &lt;p&gt;Now restart Engine to let it use the new variables:&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# systemctl restart ovirt-engine
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;The next step is actually configure one "container VM" and run it.&lt;/p&gt;
 &lt;h2&gt;4. Create the container "VM"&lt;/h2&gt;
 &lt;p&gt;To finally run a container, you start creating a VM much like you always did, with
@@ -178,24 +410,18 @@ few changes&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;containerImage = redis
 containerType = docker
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;h3&gt;4.2. A little bit of extra work: preload the images on the Vdsm host&lt;/h3&gt;
 &lt;p&gt;This step is not needed by the flow, and will be handled by oVirt in the future.
 The issue is how the container image are handled. They are stored by the container
 management system on each host, and they are not pre-downloaded.&lt;/p&gt;
 &lt;p&gt;To shorten the duration of the first boot, you are advised to pre-download
 the image(s) you want to run. For example&lt;/p&gt;
-&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;&lt;span class="cp"&gt;##&lt;/span&gt;&lt;span class="c"&gt; on the Vdsm host you want to use with containers&lt;/span&gt;&lt;span class="x"&gt;&lt;/span&gt;
-&lt;span class="err"&gt;#&lt;/span&gt;&lt;span class="x"&gt; docker pull &lt;/span&gt;&lt;span class="p"&gt;$&lt;/span&gt;&lt;span class="nv"&gt;image&lt;/span&gt;&lt;span class="x"&gt;&lt;/span&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;## on the Vdsm host you want to use with containers
+# docker pull $image
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;p&gt;example:&lt;/p&gt;
 &lt;div class="highlight"&gt;&lt;pre&gt;&lt;span&gt;&lt;/span&gt;# docker pull redis
 &lt;/pre&gt;&lt;/div&gt;
-
-
 &lt;h2&gt;5. Run the container "VM"&lt;/h2&gt;
 &lt;p&gt;You are now all set to run your "VM" using oVirt Engine, just like any existing VM.
 Some actions doesn't make sense for a container "VM", like live migration.
