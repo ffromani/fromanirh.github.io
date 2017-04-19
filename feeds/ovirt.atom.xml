@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom"><title>virt-bits</title><link href="https://fromanirh.github.io/" rel="alternate"></link><link href="https://fromanirh.github.io/feeds/ovirt.atom.xml" rel="self"></link><id>https://fromanirh.github.io/</id><updated>2017-04-19T09:12:00+02:00</updated><entry><title>Performance monitoring of Vdsm</title><link href="https://fromanirh.github.io/performance-monitoring-of-vdsm.html" rel="alternate"></link><published>2017-04-19T09:12:00+02:00</published><author><name>Francesco Romani</name></author><id>tag:fromanirh.github.io,2017-04-19:performance-monitoring-of-vdsm.html</id><summary type="html">&lt;h1&gt;Monitoring the performance monitor of Vdsm&lt;/h1&gt;
+<feed xmlns="http://www.w3.org/2005/Atom"><title>virt-bits</title><link href="https://fromanirh.github.io/" rel="alternate"></link><link href="https://fromanirh.github.io/feeds/ovirt.atom.xml" rel="self"></link><id>https://fromanirh.github.io/</id><updated>2017-04-19T16:55:00+02:00</updated><entry><title>Performance monitoring of Vdsm</title><link href="https://fromanirh.github.io/performance-monitoring-of-vdsm.html" rel="alternate"></link><published>2017-04-19T16:55:00+02:00</published><author><name>Francesco Romani</name></author><id>tag:fromanirh.github.io,2017-04-19:performance-monitoring-of-vdsm.html</id><summary type="html">&lt;h1&gt;Monitoring the performance monitor of Vdsm&lt;/h1&gt;
 &lt;p&gt;Vdsm, the &lt;a href="http://www.ovirt.org"&gt;oVirt&lt;/a&gt; node management daemon, provides
 monitoring and telemetry reporting for the host on which runs, and for the VM
 which manages. Up until version 4.1, included, Vdsm includes custom-built monitoring
@@ -7,11 +7,11 @@ code. In 4.2 and beyond, we are transitioning to &lt;a href="http://www.collectd
 &lt;p&gt;In this document we'll see how this switch affects the performance of Vdsm, and what
 improvements are in the pipeline.&lt;/p&gt;
 &lt;h2&gt;What Vdsm monitors&lt;/h2&gt;
-&lt;p&gt;There are four major monitoring duties that Vdsm performs. While all four are important,
-the performance cost of all of those varies greatly. Those are:&lt;/p&gt;
+&lt;p&gt;There are four major monitoring duties that Vdsm performs.
+While all four are important, the performance cost of all of those varies greatly.&lt;/p&gt;
 &lt;ol&gt;
 &lt;li&gt;
-&lt;p&gt;monitoring of the VMs - for external consumption
+&lt;p&gt;monitoring of the VMs - for external consumption.
    Provide metrics about the hypervisor resource consumption, both physical and virtual.
    e.g. real CPU usage per-hypervisor, VCPU usage inside the hypervisor, RAM used by the
    hypervisor, network traffic per-hypervisor. This task is done by &lt;a href="http://www.libvirt.org"&gt;libvirt&lt;/a&gt;,
@@ -19,7 +19,7 @@ the performance cost of all of those varies greatly. Those are:&lt;/p&gt;
    time-series DB, oVirt Engine, oVirt data warehous).&lt;/p&gt;
 &lt;/li&gt;
 &lt;li&gt;
-&lt;p&gt;monitoring of the VMs - for &lt;em&gt;internal&lt;/em&gt; consumption
+&lt;p&gt;monitoring of the VMs - for &lt;em&gt;internal&lt;/em&gt; consumption.
    Vdsm also monitor some key VM metrics to implement some of its flows. The most notable
    of those flows is the automatic extension of thin-provisioned disks. This gives the
    illusion of fully provisioned disks for VMs, while actually they are thin-provisioned
@@ -28,13 +28,13 @@ the performance cost of all of those varies greatly. Those are:&lt;/p&gt;
    but this metric is used only internally.&lt;/p&gt;
 &lt;/li&gt;
 &lt;li&gt;
-&lt;p&gt;monitoring of the Host
-   Provide the metrics about the host performance and resource allocation, like cpu usage
-   memorty consumption, network traffic, hugepage allocation, numa statistics.
+&lt;p&gt;monitoring of the Host.
+   Provide the metrics about the host performance and resource allocation, like cpu usage,
+   memory consumption, network traffic, hugepage allocation, numa statistics.
    Those stats are gathered by Vdsm itself scanning files under the linux procfs or sysfs.&lt;/p&gt;
 &lt;/li&gt;
 &lt;li&gt;
-&lt;p&gt;Vdsm health-check
+&lt;p&gt;Vdsm health-check.
    Vdsm reports metrics about its own behaviour and health, like its CPU and RAM consumption,
    number of active threads, liveness of the libvirtd connection.
    It is of course debatable that Vdsm reports its own health: if Vdsm becomes unresponsive, or
@@ -42,25 +42,24 @@ the performance cost of all of those varies greatly. Those are:&lt;/p&gt;
 &lt;/li&gt;
 &lt;/ol&gt;
 &lt;h2&gt;Replacements for the Vdsm monitoring&lt;/h2&gt;
-&lt;p&gt;The collectd projects offers a good alternative for the Vdsm monitoring. Collectd is a mature and
-extensible project with a great array of plugin to collect a lot of metrics.&lt;/p&gt;
+&lt;p&gt;The collectd projects offers a good alternative for the Vdsm monitoring.
+Collectd is a mature and extensible project with a great array of plugin to collect a lot of metrics.&lt;/p&gt;
 &lt;p&gt;Collectd version 5.7.0 and onwards offers straightforward replacement for the monitoring areas #1 and #3.
 However, we do have some gaps between the collectd virt plugin and the metrics reported by Vdsm.
 The author submitted some patches to bring the collectd virt plugin up to speed, and those enhancement
 are expected to be delivered in collectd &amp;gt;= 5.8.0.
 Furthermore, &lt;a href="https://github.com/fromanirh/collectd-ovirt"&gt;a new collectd plugin is available&lt;/a&gt;
-rewritten (almost) from scratch with a clean and modern codebase, shedding all the legacy constaints
-the collectd plugin has.&lt;/p&gt;
+rewritten (almost) from scratch with a clean and modern codebase. Unfortunately this plugin is not suitable
+for submission upstream, being a complete rewrite of it.&lt;/p&gt;
 &lt;p&gt;libvirt &amp;gt;= 3.2.0 gained support for disk threshold events: libvirtd can emit one event if the disk
 usage exceeds a configurable threshold, so we can leverage this in oVirt &amp;gt;= 4.2 ang replace the
-monitoring area #2.&lt;/p&gt;
+monitoring area #2, which is currently implemented polling each thin-provisioned disk of each VM.&lt;/p&gt;
 &lt;p&gt;Finally, the extensible nature of collectd allows us to replace the self-health Vdsm monitoring with
 &lt;a href="https://github.com/fromanirh/procwatch"&gt;minimal glue code&lt;/a&gt;, avoiding the need of a custom built plugin
 with a very narrow use case. This plugin, and the detailed monintoring flow, will be described in a future
 post.&lt;/p&gt;
 &lt;h2&gt;Test configuration and methods&lt;/h2&gt;
-&lt;p&gt;Let's describe the test environment.&lt;/p&gt;
-&lt;p&gt;All test will be run on one up-to-date RHEL 7.3 (you can get identical result with CentOS 7.3) running
+&lt;p&gt;All tests will run on one up-to-date RHEL 7.3 (you can get identical result with CentOS 7.3) installed
 on a box with one core i7 3770 CPU and 32 GiB of RAM.&lt;/p&gt;
 &lt;p&gt;The software stack is the aforementioned stock RHEL 7.3 plus:&lt;/p&gt;
 &lt;ul&gt;
@@ -86,7 +85,7 @@ stack. So we will run very simple VMs, each with 16 MiB (yes, sixteen megabibyte
 pack as many VMs as possible), 1 vcpu, 1GiB ISCSI disk, no OS running thus no oVirt Guest Agent.&lt;/p&gt;
 &lt;p&gt;Again, such minimal VMs are used only because resource constraints. The test is still significant to assess
 the performances of the host side.&lt;/p&gt;
-&lt;p&gt;We will evaluate the &lt;a href="https://en.wikipedia.org/wiki/Load_(computing)"&gt;long term load averag&lt;/a&gt; and the CPU consumption
+&lt;p&gt;We will evaluate the &lt;a href="https://en.wikipedia.org/wiki/Load_(computing)"&gt;long term load average&lt;/a&gt; and the CPU consumption
 of the processes.
 In each of the following graphs, if not otherwise specified, we will have&lt;/p&gt;
 &lt;ul&gt;
@@ -115,13 +114,14 @@ In each of the following graphs, if not otherwise specified, we will have&lt;/p&
 &lt;p&gt;purple line: load average graph&lt;/p&gt;
 &lt;/li&gt;
 &lt;/ul&gt;
-&lt;p&gt;The test starts around the 11:25 local time, when we booti the VMs. Around the 11:30 local time the system
-is stable and the measurmenent begins.&lt;/p&gt;
+&lt;p&gt;The test starts around the 11:25 local time, when we boot the VMs. Around the 11:30 local time the system
+is stable and the measuremenents begin.&lt;/p&gt;
 &lt;h2&gt;Experiment 1: the simplest approach, Vdsm and collectd side by side&lt;/h2&gt;
 &lt;p&gt;&lt;img alt="figure 1: baseline, collectd and vdsm side by side" src="https://fromanirh.github.io/images/perf-mon-fig1.png" style="width: 1613px; height: auto; max-width: 100%;"/&gt;&lt;/p&gt;
 &lt;p&gt;&lt;a href="images/perf-mon-fig1.png"&gt;download the full image&lt;/a&gt;&lt;/p&gt;
-&lt;p&gt;The first 30m (11:30 -&amp;gt; 12:00) are stock config. Stock Vdsm, collectd is
-just monitoring the host (no vm monitoring, virt plugin unloaded).&lt;/p&gt;
+&lt;p&gt;The first 30m (11:30 -&amp;gt; 12:00) are the evaluation of the stock configuration.
+We have out-of-the-box Vdsm, and collectd is just monitoring the host (no vm monitoring,
+virt plugin unloaded).&lt;/p&gt;
 &lt;p&gt;Libvirt load is ~14% (green line)
 Vdsm load is a bit higher, ~16% (red line)
 UNIX load is ~0.6 (light purple)
@@ -207,7 +207,7 @@ configured like that:
 at any given time.&lt;/p&gt;
 &lt;p&gt;Around the ~14:40 mark we switched the collectd plugin and restart collectd
 We can observe the spiky load profile typical of when we use bulk stats
-from a single thread. Libvirt loads roughly halves, while the collectd load
+from a single thread. The lLibvirt load is roughly cut in half, while the collectd load
 slightly increases. This could be one byproduct of the measurement, the expected load profile
 should be spikes of high load and near zero load between spikes.&lt;/p&gt;
 &lt;p&gt;We have room to do some optimizations here to shave some more load, but
@@ -219,13 +219,14 @@ a bit more performance with no regression to our current state.&lt;/p&gt;
 &lt;h2&gt;Summary and takeaways&lt;/h2&gt;
 &lt;p&gt;&lt;img alt="figure 5: summary" src="https://fromanirh.github.io/images/perf-mon-fig5.png" style="width: 1323px; height: auto; max-width: 100%;"/&gt;&lt;/p&gt;
 &lt;p&gt;&lt;a href="images/perf-mon-fig5.png"&gt;download the full image&lt;/a&gt;&lt;/p&gt;
-&lt;p&gt;To summarize and wrap up, we now provide a graphical summary of the load measured
+&lt;p&gt;To summarize and wrap up, we now provide one summary of the load measured
 during the experiments.&lt;/p&gt;
 &lt;p&gt;The bars are the cpu percent for the components, while the line is
 the UNIX load average.&lt;/p&gt;
-&lt;p&gt;The averages are NOT precise, rather extrapolation from the graphs, yet
-this is a good enough approximation. Those results needs to be reproduced
-and extensively tested in more test conditions.&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;PLEASE NOTE&lt;/em&gt; that The averages are &lt;em&gt;not&lt;/em&gt; exact averages, but rather extrapolation from
+the graphs; yet this is a good enough approximation.
+However, this is just one initial exploration study, and those results needs to be
+reproduced and extensively tested in more test conditions.&lt;/p&gt;
 &lt;p&gt;Please note the last column is one estimate of the load using the
 upstream virt plugin relaxing the sampling interval from 10s (collectd
 default) to 15s (vdsm default).
@@ -233,21 +234,21 @@ A ~10m test was run to gather some data.&lt;/p&gt;
 &lt;p&gt;The takeaways from this test run:&lt;/p&gt;
 &lt;ol&gt;
 &lt;li&gt;
-&lt;p&gt;adoptint the disk usage notification event from libvirt offers a significant performance benefit,
+&lt;p&gt;adoption of the disk usage notification event from libvirt offers a significant performance benefit,
    and comes for free in libvirt &amp;gt;= 3.2.0&lt;/p&gt;
 &lt;/li&gt;
 &lt;li&gt;
 &lt;p&gt;the aformentioned event, plus the adoption of collectd for monitoring makes the oVirt stack
-gain ~33% of system performance (cumulative load from ~30% to ~18%).&lt;/p&gt;
+   gain ~33% of system performance (cumulative load from ~30% to ~18%).&lt;/p&gt;
 &lt;/li&gt;
 &lt;li&gt;
 &lt;p&gt;there is low-hanging further optimizations, early quick tests suggest that the oVirt stack can
-reach ~50% system performance improvent (cumulative load from ~30% to ~16%) using
-code which is ready &lt;em&gt;today&lt;/em&gt;, like the virt2 plugin.&lt;/p&gt;
+   reach ~50% system performance improvent (cumulative load from ~30% to ~16%) using
+   code which is ready &lt;em&gt;today&lt;/em&gt;, like the virt2 plugin. More to come in a future post.&lt;/p&gt;
 &lt;/li&gt;
 &lt;li&gt;
 &lt;p&gt;No accurate profiling or optimization was recently made on the libvirtd or collectd side,
-so more performance gains are definitevely possible.&lt;/p&gt;
+   so more performance gains are definitevely possible.&lt;/p&gt;
 &lt;/li&gt;
 &lt;/ol&gt;</summary><category term="oVirt"></category><category term="Vdsm"></category><category term="release-4.1"></category></entry><entry><title>Container support for oVirt</title><link href="https://fromanirh.github.io/containers-in-ovirt.html" rel="alternate"></link><published>2017-01-26T10:52:00+01:00</published><author><name>Francesco Romani</name></author><id>tag:fromanirh.github.io,2017-01-26:containers-in-ovirt.html</id><summary type="html">&lt;h1&gt;How to try the experimental container support for Vdsm.&lt;/h1&gt;
 &lt;p&gt;In oVirt 4.1, Vdsm (4.19) gained the &lt;em&gt;experimental&lt;/em&gt; support to run containers alongside VMs.
